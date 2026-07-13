@@ -1,0 +1,47 @@
+# Environnement virtuel
+.venv/
+venv/
+env/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers de configuration locaux
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Données temporaires
+tmp/
+temp/
+cache/
+
+# Modèles téléchargés
+models/
+20240610_blockchain.structure.json
+20240610_blockchain.structure.md
+Rapport pfe version finale corrigé chatbot 2025 (1).structure.json
+Rapport pfe version finale corrigé chatbot 2025 (1).structure.md
+data/
+output_docling/
+output_pymupdf/
+Sources/
