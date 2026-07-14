@@ -1,4 +1,4 @@
-"""Analyse linguistique et métriques de qualité du texte."""
+"""Analyse linguistique et metriques de qualite du texte."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 @dataclass
 class QualityMetrics:
-    """Métriques calculées sur un chunk pour évaluation qualité."""
+    """Metriques calculees sur un chunk pour evaluation qualite."""
 
     char_count: int
     word_count: int
@@ -22,7 +22,7 @@ class QualityMetrics:
 
 
 def compute_quality_metrics(text: str) -> QualityMetrics:
-    """Calcule l'ensemble des métriques qualité sur un texte."""
+    """Calcule l'ensemble des metriques qualite sur un texte."""
     if not text:
         return QualityMetrics(
             char_count=0, word_count=0, unique_word_ratio=0.0,
@@ -42,7 +42,7 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
 
     alpha_chars = sum(1 for c in clean if c.isalpha())
     digit_chars = sum(1 for c in clean if c.isdigit())
-    punct_chars = sum(1 for c in clean if c in ".,;:!?-–—'\"()[]{}«»")
+    punct_chars = sum(1 for c in clean if c in ".,;:!?-'\"()[]{}")
 
     alpha_ratio = alpha_chars / char_count if char_count > 0 else 0.0
     digit_ratio = digit_chars / char_count if char_count > 0 else 0.0
@@ -64,11 +64,11 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
         if word_count < 5:
             reasons.append(f"trop peu de mots ({word_count})")
         if unique_word_ratio < 0.15:
-            reasons.append(f"répétition excessive (ratio uniques={unique_word_ratio:.2f})")
+            reasons.append(f"repetition excessive (ratio uniques={unique_word_ratio:.2f})")
         if alpha_ratio < 0.30:
-            reasons.append(f"trop peu de caractères alphabétiques ({alpha_ratio:.2f})")
+            reasons.append(f"trop peu de caracteres alphabetiques ({alpha_ratio:.2f})")
         if digit_ratio >= 0.70:
-            reasons.append(f"dominé par des chiffres ({digit_ratio:.2f})")
+            reasons.append(f"domine par des chiffres ({digit_ratio:.2f})")
         rejection_reason = "; ".join(reasons)
 
     return QualityMetrics(
@@ -85,7 +85,7 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
 
 
 def is_pure_number_punctuation(text: str) -> bool:
-    """Détecte si le texte est composé uniquement de nombres et ponctuation."""
+    """Detecte si le texte est compose uniquement de nombres et ponctuation."""
     stripped = text.strip()
     if not stripped:
         return True

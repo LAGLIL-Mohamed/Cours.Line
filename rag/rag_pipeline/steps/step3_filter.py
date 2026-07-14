@@ -1,4 +1,4 @@
-"""Étape 3 : Filtrage des contenus non pertinents."""
+"""Etape 3 : Filtrage des contenus non pertinents."""
 
 from __future__ import annotations
 
@@ -41,5 +41,5 @@ class Step3Filter:
         alpha_ratio = sum(1 for c in text if c.isalpha()) / max(len(text), 1)
         if alpha_ratio < 0.10 and len(text) > 200:
             page.filtered = True
-            page.filter_reason = "Trop peu de texte alphabétique"
+            page.filter_reason = "Trop peu de texte alphabetique"
             return

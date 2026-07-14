@@ -1,6 +1,8 @@
-"""Étape 2 : Nettoyage du texte extrait."""
+"""Etape 2 : Nettoyage du texte extrait."""
 
 from __future__ import annotations
+
+from copy import copy
 
 from ..schemas import Page
 from .._internal._utils import (
@@ -11,7 +13,7 @@ from .._internal._utils import (
 
 
 class Step2Clean:
-    """Nettoie le texte brut : espaces, lignes coupées, Unicode, fusion paragraphes."""
+    """Nettoie le texte brut : espaces, lignes coupees, Unicode, fusion paragraphes."""
 
     def run(self, pages: list[Page]) -> list[Page]:
         for page in pages:
@@ -26,7 +28,6 @@ class Step2Clean:
         return text
 
     def _clean_blocks(self, blocks: list) -> list:
-        from copy import copy
         cleaned = []
         for block in blocks:
             new_block = copy(block)

@@ -1,4 +1,4 @@
-"""Étape 0 : Métadonnées du document."""
+"""Etape 0 : Metadonnees du document."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .._internal._utils import generate_id
 
 
 class Step0Metadata:
-    """Génère les métadonnées initiales du document."""
+    """Genere les metadonnees initiales du document."""
 
     def run(self, pdf_path: Path) -> Document:
         path = Path(pdf_path).resolve()

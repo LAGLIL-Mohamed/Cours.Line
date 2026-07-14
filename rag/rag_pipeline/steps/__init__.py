@@ -1,4 +1,4 @@
-"""Étapes du pipeline RAG (0 à 6)."""
+"""Etapes du pipeline RAG (0 a 6)."""
 
 from .step0_metadata import Step0Metadata
 from .step1_extract import Step1Extract

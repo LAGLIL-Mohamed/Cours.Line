@@ -1,4 +1,4 @@
-"""Étape 1 : Extraction du contenu textuel du PDF avec PyMuPDF."""
+"""Etape 1 : Extraction du contenu textuel du PDF avec PyMuPDF."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ..schemas import Document, Page, TextBlock
 
 
 class Step1Extract:
-    """Extrait le texte brut et structuré page par page."""
+    """Extrait le texte brut et structure page par page."""
 
     def run(self, doc: Document) -> list[Page]:
         pages = []

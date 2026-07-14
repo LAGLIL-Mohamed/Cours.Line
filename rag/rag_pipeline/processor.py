@@ -18,14 +18,14 @@ from .steps import (
 
 
 class DocumentProcessor:
-    """Enchaîne les 7 étapes de préparation des données PDF."""
+    """Enchaine les 7 etapes de preparation des donnees PDF."""
 
     def __init__(self, config: PipelineConfig | None = None) -> None:
         self.config = config or PipelineConfig()
         self._init_steps()
 
     def _init_steps(self) -> None:
-        """Instancie chaque étape avec la config partagée."""
+        """Instancie chaque etape avec la config partagee."""
         self.step0 = Step0Metadata()
         self.step1 = Step1Extract()
         self.step2 = Step2Clean()
@@ -35,7 +35,7 @@ class DocumentProcessor:
         self.step6 = Step6Quality(self.config)
 
     def process(self, pdf_path: Path | str) -> list[Chunk]:
-        """Exécute le pipeline complet sur un PDF."""
+        """Execute le pipeline complet sur un PDF."""
         path = Path(pdf_path)
 
         doc: Document = self.step0.run(path)
@@ -49,6 +49,6 @@ class DocumentProcessor:
         return chunks
 
     def process_valid_only(self, pdf_path: Path | str) -> list[Chunk]:
-        """Retourne uniquement les chunks acceptés (non rejetés)."""
+        """Retourne uniquement les chunks acceptes (non rejetés)."""
         all_chunks = self.process(pdf_path)
         return [c for c in all_chunks if not c.rejected]
