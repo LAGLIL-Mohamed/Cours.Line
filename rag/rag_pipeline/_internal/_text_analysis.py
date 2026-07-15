@@ -1,14 +1,21 @@
-"""Analyse linguistique et metriques de qualite du texte."""
+"""Analyse linguistique et métriques de qualité du texte."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
+# --- NOUVEAU : import pour fuzzy matching ---
+try:
+    from rapidfuzz import fuzz
+    RAPIDFUZZ_AVAILABLE = True
+except ImportError:
+    RAPIDFUZZ_AVAILABLE = False
+
 
 @dataclass
 class QualityMetrics:
-    """Metriques calculees sur un chunk pour evaluation qualite."""
+    """Métriques calculées sur un chunk pour évaluation qualité."""
 
     char_count: int
     word_count: int
@@ -22,7 +29,7 @@ class QualityMetrics:
 
 
 def compute_quality_metrics(text: str) -> QualityMetrics:
-    """Calcule l'ensemble des metriques qualite sur un texte."""
+    """Calcule l'ensemble des métriques qualité sur un texte."""
     if not text:
         return QualityMetrics(
             char_count=0, word_count=0, unique_word_ratio=0.0,
@@ -42,7 +49,7 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
 
     alpha_chars = sum(1 for c in clean if c.isalpha())
     digit_chars = sum(1 for c in clean if c.isdigit())
-    punct_chars = sum(1 for c in clean if c in ".,;:!?-'\"()[]{}")
+    punct_chars = sum(1 for c in clean if c in ".,;:!?-–—'\"()[]{}«»")
 
     alpha_ratio = alpha_chars / char_count if char_count > 0 else 0.0
     digit_ratio = digit_chars / char_count if char_count > 0 else 0.0
@@ -64,11 +71,11 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
         if word_count < 5:
             reasons.append(f"trop peu de mots ({word_count})")
         if unique_word_ratio < 0.15:
-            reasons.append(f"repetition excessive (ratio uniques={unique_word_ratio:.2f})")
+            reasons.append(f"répétition excessive (ratio uniques={unique_word_ratio:.2f})")
         if alpha_ratio < 0.30:
-            reasons.append(f"trop peu de caracteres alphabetiques ({alpha_ratio:.2f})")
+            reasons.append(f"trop peu de caractères alphabétiques ({alpha_ratio:.2f})")
         if digit_ratio >= 0.70:
-            reasons.append(f"domine par des chiffres ({digit_ratio:.2f})")
+            reasons.append(f"dominé par des chiffres ({digit_ratio:.2f})")
         rejection_reason = "; ".join(reasons)
 
     return QualityMetrics(
@@ -85,9 +92,40 @@ def compute_quality_metrics(text: str) -> QualityMetrics:
 
 
 def is_pure_number_punctuation(text: str) -> bool:
-    """Detecte si le texte est compose uniquement de nombres et ponctuation."""
+    """Détecte si le texte est composé uniquement de nombres et ponctuation."""
     stripped = text.strip()
     if not stripped:
         return True
     alpha_count = sum(1 for c in stripped if c.isalpha())
     return alpha_count == 0
+
+
+# =====================================================================
+# NOUVEAU : Fuzzy matching pour TOC
+# =====================================================================
+
+def find_best_toc_match(text: str, toc_entries: list, min_score: int = 82) -> Optional:
+    """
+    Fuzzy-match d'un titre détecté contre les entrées du TOC non encore utilisées.
+    Retourne la meilleure entrée si son score dépasse min_score, sinon None.
+    """
+    if not RAPIDFUZZ_AVAILABLE or not toc_entries:
+        return None
+
+    best_entry = None
+    best_score = 0
+
+    # Import local pour éviter dépendance hard
+    from rapidfuzz import fuzz as _fuzz
+
+    for entry in toc_entries:
+        if entry.matched:
+            continue
+        score = _fuzz.token_sort_ratio(text.lower(), entry.title.lower())
+        if score > best_score:
+            best_score = score
+            best_entry = entry
+
+    if best_entry is not None and best_score >= min_score:
+        return best_entry
+    return None

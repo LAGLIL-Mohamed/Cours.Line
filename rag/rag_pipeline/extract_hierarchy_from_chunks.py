@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
-CHUNKS_FILE: str = r"C:\Users\dell\Desktop\Projet python - RAG\rag\data\output\chunks.jsonl"
+CHUNKS_FILE: str = r"rag\data\input\chunks.jsonl"
 OUTPUT_DIR: str = r"C:\Users\dell\Desktop\Projet python - RAG\rag\data\output"
 
 

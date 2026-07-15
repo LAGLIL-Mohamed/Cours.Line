@@ -1,7 +1,10 @@
-"""Pipeline de preparation des donnees PDF pour vectorisation RAG."""
+"""Pipeline de préparation des données PDF pour vectorisation RAG."""
 
 from .processor import DocumentProcessor
-from .schemas import Chunk, Document, Heading, Page, Paragraph, Section, TextBlock
+from .schemas import (
+    Chunk, Document, Heading, Page, Paragraph, Section, TextBlock,
+    TocEntry, HierarchyPath, ContentBlock,
+)
 from .config import PipelineConfig
 
 __all__ = [
@@ -14,4 +17,7 @@ __all__ = [
     "Paragraph",
     "Section",
     "TextBlock",
+    "TocEntry",
+    "HierarchyPath",
+    "ContentBlock",
 ]

@@ -1,4 +1,4 @@
-"""Etape 6 : Controle qualite des chunks."""
+"""Étape 6 : Contrôle qualité des chunks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ..config import PipelineConfig
 
 
 class Step6Quality:
-    """Filtre et note les chunks selon les criteres de qualite."""
+    """Filtre et note les chunks selon les critères de qualité."""
 
     def __init__(self, config: PipelineConfig | None = None) -> None:
         self.config = config or PipelineConfig()

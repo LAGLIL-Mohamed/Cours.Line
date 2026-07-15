@@ -1,4 +1,4 @@
-"""Generation des embeddings avec MiniLM."""
+"""Generation des embeddings avec BGE."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ from .schemas import Embedding
 
 
 class BGEEmbedder:
-    """Wrappe le modele MiniLM pour encoder chunks et requetes."""
+    """Wrappe le modele BGE pour encoder chunks et requetes."""
+
+    QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
     def __init__(self, config: VectorConfig | None = None) -> None:
         self.config = config or VectorConfig()
-        print(f"Chargement du modele MiniLM : {self.config.model_name}")
+        print(f"Chargement du modele BGE : {self.config.model_name}")
         self.model = SentenceTransformer(self.config.model_name, device=self.config.device)
         self._dim = self.model.get_sentence_embedding_dimension()
         print(f"  -> Dimensions : {self._dim}")
@@ -36,42 +38,54 @@ class BGEEmbedder:
         return embeddings
 
     def embed_query(self, query: str) -> np.ndarray:
-        # MiniLM n'a pas besoin de préfixe spécifique
+        prefixed = self.QUERY_PREFIX + query
         embedding = self.model.encode(
-            query,
+            prefixed,
             normalize_embeddings=self.config.normalize_embeddings,
             convert_to_numpy=True,
         )
         return embedding
 
-    def embed_chunks_from_file(self, chunks_file: Path | None = None) -> list[Embedding]:
-        if chunks_file is None:
-            chunks_file = self.config.chunks_input
+    def embed_chunks_from_files(self, chunks_files: list[Path]) -> list[Embedding]:
+        """Lit plusieurs fichiers chunks.jsonl (un par PDF) et genere les embeddings.
 
-        print(f"Lecture des chunks : {chunks_file}")
-        chunks = []
-        with open(chunks_file, "r", encoding="utf-8") as f:
-            for line in f:
-                chunks.append(json.loads(line))
+        Les chunk_id sont prefixes par le nom du dossier parent (nom du PDF)
+        pour garantir l'unicite globale.
+        """
+        all_chunks = []
 
-        valid_chunks = [c for c in chunks if not c.get("rejected", False)]
-        print(f"  -> {len(valid_chunks)} chunks valides / {len(chunks)} total")
+        for chunks_file in chunks_files:
+            source_id = chunks_file.parent.name  # ex: "mon_pdf"
+            print(f"  Lecture : {chunks_file} (source_id={source_id})")
+            with open(chunks_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    chunk = json.loads(line)
+                    # Prefixe l'ID pour eviter les collisions entre PDFs
+                    chunk["chunk_id"] = f"{source_id}::{chunk['chunk_id']}"
+                    chunk["source_id"] = source_id
+                    all_chunks.append(chunk)
 
-        texts = [c["texte_chunk"] for c in valid_chunks]
+        valid_chunks = [c for c in all_chunks if not c.get("rejected", False)]
+        print(f"  -> {len(valid_chunks)} chunks valides / {len(all_chunks)} total")
+
+        if not valid_chunks:
+            return []
+
+        texts = [c["text"] for c in valid_chunks]
         vectors = self.embed_chunks(texts)
 
-        embeddings = []
-        for chunk, vec in zip(valid_chunks, vectors):
-            embeddings.append(Embedding(
-                chunk_id=chunk["chunk_id"],
-                vector=vec,
-                texte_chunk=chunk["texte_chunk"],
-                texte_section_complete=chunk["texte_section_complete"],
-                titre_section=chunk["titre_section"],
-                source_id=chunk["source_id"],
-                page=chunk["page"],
-                section_id=chunk["section_id"],
-                position_in_section=chunk["position_in_section"],
-            ))
-
-        return embeddings
+        return [
+            Embedding(
+                chunk_id=c["chunk_id"],
+                vector=vectors[i],
+                text=c["text"],
+                chapitre=c.get("chapitre"),
+                titre=c.get("titre"),
+                sous_titre=c.get("sous_titre"),
+                hierarchy_path=c.get("hierarchy_path", []),
+                page_debut=c.get("page_debut"),
+                page_fin=c.get("page_fin"),
+                source_id=c["source_id"],
+            )
+            for i, c in enumerate(valid_chunks)
+        ]

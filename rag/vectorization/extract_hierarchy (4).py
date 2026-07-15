@@ -393,13 +393,19 @@ def collect_toc_raw_lines(doc: DoclingDocument, toc_pages: set) -> list:
     return lines
 
 
-def extract_toc(doc: DoclingDocument, max_scan_pages: int, toc_max_span: int) -> list:
+def extract_toc(doc: DoclingDocument, max_scan_pages: int, toc_max_span: int):
     """Etape 2 complète : trouve la page de sommaire, en extrait les
-    lignes, les parse. Retourne une liste de TocEntry (peut être vide
-    si aucun sommaire n'est détecté ou parsable -> mode dégradé)."""
+    lignes, les parse. Retourne (entries, toc_pages) :
+      - entries    : liste de TocEntry (peut être vide si aucun sommaire
+                     n'est détecté ou parsable -> mode dégradé)
+      - toc_pages  : ensemble des numéros de page couverts par le sommaire
+                     (None si aucun sommaire trouvé), pour pouvoir les
+                     exclure du parcours principal du document (sinon le
+                     titre "Sommaire" et ses items polluent la hiérarchie
+                     "réelle" du contenu)."""
     toc_pages = find_toc_pages(doc, max_scan_pages, toc_max_span)
     if not toc_pages:
-        return []
+        return [], None
 
     raw_lines = collect_toc_raw_lines(doc, toc_pages)
     entries = []
@@ -415,7 +421,7 @@ def extract_toc(doc: DoclingDocument, max_scan_pages: int, toc_max_span: int) ->
                     page_hint=parsed["page"],
                 )
             )
-    return entries
+    return entries, toc_pages
 
 
 # =====================================================================
@@ -441,7 +447,8 @@ def find_best_toc_match(text: str, toc_entries: list, min_score: int) -> Optiona
     return None
 
 
-def walk_document(doc: DoclingDocument, toc_entries: list, fuzzy_threshold: int):
+def walk_document(doc: DoclingDocument, toc_entries: list, fuzzy_threshold: int,
+                   toc_pages: Optional[set] = None):
     """
     Parcours complet du document dans l'ordre de lecture.
     Retourne (outline, blocks, elements) :
@@ -449,12 +456,36 @@ def walk_document(doc: DoclingDocument, toc_entries: list, fuzzy_threshold: int)
       - blocks   : liste des ContentBlock (paragraphes annotés) (pour chunks.jsonl)
       - elements : liste chronologique fusionnée {kind: "heading"/"body", ...}
                    (pour reconstruire le markdown dans l'ordre du document)
+
+    ATTRIBUTION DU NIVEAU D'UN TITRE (point le plus délicat) :
+      Le niveau brut renvoyé par Docling (`SectionHeaderItem.level`) est
+      peu fiable en pratique : Docling étiquette souvent TOUS les titres
+      avec level=1, quelle que soit leur profondeur réelle. On applique
+      donc, par ordre de priorité :
+        1. Si le titre correspond (fuzzy-match) à une entrée du sommaire
+           -> on prend le niveau OFFICIEL du sommaire. C'est aussi notre
+           "ancre" : on retient ce niveau comme `anchor_level`.
+        2. Sinon, si un sommaire existe mais que ce titre précis n'y
+           figure pas (fréquent : le sommaire ne liste souvent que 1 ou 2
+           niveaux, alors que le document contient des sous-titres plus
+           fins) -> on le place à `anchor_level + 1`, c'est-à-dire juste
+           en dessous du dernier titre confirmé par le sommaire. Cela
+           évite que ces titres non listés ne retombent tous à plat au
+           niveau 1 ("chapitre"), ce qui aplatissait complètement la
+           hiérarchie. Limite connue : deux titres non listés qui se
+           suivent seront mis au MEME niveau (frères), même si l'un est
+           en réalité plus profond que l'autre -- on ne peut pas deviner
+           plus finement sans signal supplémentaire (taille de police...).
+        3. Si aucun sommaire n'a été détecté du tout dans le document ->
+           on utilise tel quel le niveau brut de Docling (aucune ancre
+           disponible pour faire mieux).
     """
     stack: list[HeadingNode] = []
     outline: list[HeadingNode] = []
     blocks: list[ContentBlock] = []
     elements: list[dict] = []
     heading_counter = 0
+    anchor_level = 0  # niveau du dernier titre confirmé par le sommaire
 
     for item, _tree_level in doc.iterate_items():
         label = getattr(item, "label", None)
@@ -463,19 +494,34 @@ def walk_document(doc: DoclingDocument, toc_entries: list, fuzzy_threshold: int)
             continue
         page = item.prov[0].page_no if getattr(item, "prov", None) else None
 
+        # On saute entièrement la/les page(s) de sommaire : leur contenu
+        # a déjà été exploité via extract_toc(), le rejouer ici ne ferait
+        # que polluer la hiérarchie "réelle" du contenu (ex: un faux
+        # chapitre "Sommaire").
+        if toc_pages and page in toc_pages:
+            continue
+
         if label in LABELS_HEADING:
             raw_level = getattr(item, "level", None)
             if label == DocItemLabel.TITLE or raw_level is None:
                 raw_level = 1
 
-            source = "layout"
-            final_level = raw_level
-            if toc_entries:
-                match = find_best_toc_match(text, toc_entries, fuzzy_threshold)
-                if match is not None:
-                    match.matched = True
-                    final_level = match.level
-                    source = "toc_corrige"
+            match = find_best_toc_match(text, toc_entries, fuzzy_threshold) if toc_entries else None
+            if match is not None:
+                match.matched = True
+                final_level = match.level
+                source = "toc_corrige"
+                anchor_level = final_level
+            elif toc_entries:
+                # Sommaire présent mais ce titre n'y figure pas : on
+                # l'ancre juste sous le dernier titre confirmé.
+                final_level = anchor_level + 1
+                source = "layout_estime"
+            else:
+                # Aucun sommaire du tout : on n'a que le niveau brut de
+                # Docling, pour ce qu'il vaut.
+                final_level = raw_level
+                source = "layout"
 
             # Dépile tout ce qui est de niveau >= au niveau courant
             while stack and stack[-1].level >= final_level:
@@ -640,18 +686,20 @@ def run(pdf_path: Path, output_dir: Path, max_scan_pages: int, toc_max_span: int
     doc_title = getattr(doc, "name", None) or pdf_path.stem
 
     toc_entries = []
+    toc_pages = None
     if not disable_toc:
         print("[2/4] Recherche du sommaire (TOC) ...")
-        toc_entries = extract_toc(doc, max_scan_pages, toc_max_span)
+        toc_entries, toc_pages = extract_toc(doc, max_scan_pages, toc_max_span)
         if toc_entries:
-            print(f"      -> {len(toc_entries)} entrées de sommaire détectées.")
+            print(f"      -> {len(toc_entries)} entrées de sommaire détectées "
+                  f"(pages {min(toc_pages)}-{max(toc_pages)}).")
         else:
             print("      -> aucun sommaire détecté, passage en mode 'layout seul'.")
     else:
         print("[2/4] Détection du TOC désactivée (--no-toc).")
 
     print("[3/4] Parcours du document et rattachement hiérarchique ...")
-    outline, blocks, elements = walk_document(doc, toc_entries, fuzzy_threshold)
+    outline, blocks, elements = walk_document(doc, toc_entries, fuzzy_threshold, toc_pages)
     print(f"      -> {len(outline)} titres détectés, {len(blocks)} blocs de texte.")
 
     print("[4/4] Génération des fichiers de sortie ...")

@@ -42,13 +42,14 @@ class MetadataStore:
             for emb in embeddings:
                 record = {
                     "chunk_id": emb.chunk_id,
-                    "texte_chunk": emb.texte_chunk,
-                    "texte_section_complete": emb.texte_section_complete,
-                    "titre_section": emb.titre_section,
+                    "text": emb.text,
+                    "chapitre": emb.chapitre,
+                    "titre": emb.titre,
+                    "sous_titre": emb.sous_titre,
+                    "hierarchy_path": emb.hierarchy_path,
+                    "page_debut": emb.page_debut,
+                    "page_fin": emb.page_fin,
                     "source_id": emb.source_id,
-                    "page": emb.page,
-                    "section_id": emb.section_id,
-                    "position_in_section": emb.position_in_section,
                 }
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -77,11 +78,13 @@ class MetadataStore:
                 chunk_id=meta["chunk_id"],
                 score=float(dist),
                 rank=rank,
-                texte_chunk=meta["texte_chunk"],
-                texte_section_complete=meta["texte_section_complete"],
-                titre_section=meta["titre_section"],
+                text=meta["text"],
+                chapitre=meta.get("chapitre"),
+                titre=meta.get("titre"),
+                sous_titre=meta.get("sous_titre"),
+                hierarchy_path=meta.get("hierarchy_path", []),
+                page_debut=meta.get("page_debut"),
+                page_fin=meta.get("page_fin"),
                 source_id=meta["source_id"],
-                page=meta["page"],
-                section_id=meta["section_id"],
             ))
         return results

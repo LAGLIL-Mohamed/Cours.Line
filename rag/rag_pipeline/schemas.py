@@ -1,15 +1,15 @@
-"""Modeles de donnees immuables pour le pipeline RAG."""
+"""Modèles de données immuables pour le pipeline RAG."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
 class Document:
-    """Metadonnees du document source (etape 0)."""
+    """Métadonnées du document source (étape 0)."""
 
     source_id: str
     nom_fichier: str
@@ -19,7 +19,7 @@ class Document:
 
 @dataclass
 class TextBlock:
-    """Bloc textuel brut extrait par PyMuPDF (etape 1)."""
+    """Bloc textuel brut extrait par PyMuPDF (étape 1)."""
 
     text: str
     bbox: tuple[float, float, float, float]
@@ -32,7 +32,7 @@ class TextBlock:
 
 @dataclass
 class Page:
-    """Page extraite avec son contenu brut et ses blocs structures."""
+    """Page extraite avec son contenu brut et ses blocs structurés."""
 
     doc: Document
     num: int
@@ -45,18 +45,14 @@ class Page:
 
 @dataclass
 class Heading:
-    """Titre ou sous-titre detecte dans le document - enrichi hierarchie."""
+    """Titre ou sous-titre détecté dans le document."""
 
     text: str
     level: int
     page: int
     bbox: tuple[float, float, float, float]
     font_size: float
-    source: str = "style"          # "native_toc" | "visual_toc" | "style"
-    confidence: float = 0.75
-    is_numbered: bool = False
-    is_bold: bool = False
-    is_uppercase: bool = False
+    source: str = "layout"  # "layout" ou "toc_corrige"
 
 
 @dataclass
@@ -71,19 +67,17 @@ class Paragraph:
 
 @dataclass
 class Section:
-    """Objet semantique parent : section delimitee par des titres."""
+    """Objet sémantique parent : section délimitée par des titres."""
 
     section_id: str
     source_id: str
     heading: Heading
     paragraphs: list[Paragraph] = field(default_factory=list)
     subsections: list[Section] = field(default_factory=list)
-    hierarchy_path: list[str] = field(default_factory=list)  # [Chapitre, Titre, Sous-titre]
-    parent_id: str | None = None
 
     @property
     def texte_complet(self) -> str:
-        """Texte integral de la section (pour reconstruction contextuelle)."""
+        """Texte intégral de la section (pour reconstruction contextuelle)."""
         parts = [self.heading.text]
         for para in self.paragraphs:
             parts.append(para.text)
@@ -91,27 +85,60 @@ class Section:
 
     @property
     def pages(self) -> list[int]:
-        """Numeros de pages couverts par la section."""
+        """Numéros de pages couverts par la section."""
         pages = {self.heading.page}
         for para in self.paragraphs:
             pages.add(para.page_start)
             pages.add(para.page_end)
         return sorted(pages)
 
-    @property
-    def chapter_title(self) -> str:
-        """Retourne le titre du chapitre racine (premier element du chemin)."""
-        return self.hierarchy_path[0] if self.hierarchy_path else self.heading.text
 
-    @property
-    def full_path(self) -> str:
-        """Chemin hierarchique complet sous forme de chaine."""
-        return " > ".join(self.hierarchy_path) if self.hierarchy_path else self.heading.text
+# =====================================================================
+# NOUVEAU : Structures pour la hiérarchie enrichie (Chapitre/Titre/Sous-titre)
+# =====================================================================
+
+@dataclass
+class TocEntry:
+    """Entrée du sommaire (Table of Contents)."""
+
+    raw_line: str
+    numbering: Optional[str]
+    title: str
+    level: int
+    page_hint: Optional[int]
+    matched: bool = False
+
+
+@dataclass
+class HierarchyPath:
+    """Chemin hiérarchique complet d'un contenu."""
+
+    chapitre: Optional[str] = None
+    titre: Optional[str] = None
+    sous_titre: Optional[str] = None
+    path_titles: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chapitre": self.chapitre,
+            "titre": self.titre,
+            "sous_titre": self.sous_titre,
+            "path_titles": self.path_titles,
+        }
+
+
+@dataclass
+class ContentBlock:
+    """Bloc de contenu avec annotation hiérarchique."""
+
+    text: str
+    page: Optional[int]
+    hierarchy: HierarchyPath
 
 
 @dataclass
 class Chunk:
-    """Unite textuelle fine destinee a la vectorisation - enrichie hierarchie."""
+    """Unité textuelle fine destinée à la vectorisation."""
 
     chunk_id: str
     source_id: str
@@ -120,13 +147,6 @@ class Chunk:
     titre_section: str
     texte_chunk: str
     texte_section_complete: str
-
-    # Champs hierarchiques enrichis
-    hierarchy_level: int = 1
-    hierarchy_path: list[str] = field(default_factory=list)
-    chapter_title: str = ""
-    parent_sections: list[str] = field(default_factory=list)
-
     font_size_avg: float | None = None
     is_bold: bool = False
     position_in_section: int = 0
@@ -134,10 +154,19 @@ class Chunk:
     quality_score: float = 0.0
     rejected: bool = False
     rejection_reason: str | None = None
+
+    # --- NOUVEAU : Hiérarchie enrichie ---
+    chapitre: Optional[str] = None
+    titre: Optional[str] = None
+    sous_titre: Optional[str] = None
+    hierarchy_path: list[str] = field(default_factory=list)
+    page_debut: Optional[int] = None
+    page_fin: Optional[int] = None
+
     _blocks_refs: list[TextBlock] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialisation pour stockage JSON/JSONL."""
+        """Sérialisation pour stockage JSON."""
         return {
             "chunk_id": self.chunk_id,
             "source_id": self.source_id,
@@ -146,10 +175,6 @@ class Chunk:
             "titre_section": self.titre_section,
             "texte_chunk": self.texte_chunk,
             "texte_section_complete": self.texte_section_complete,
-            "hierarchy_level": self.hierarchy_level,
-            "hierarchy_path": self.hierarchy_path,
-            "chapter_title": self.chapter_title,
-            "parent_sections": self.parent_sections,
             "font_size_avg": self.font_size_avg,
             "is_bold": self.is_bold,
             "position_in_section": self.position_in_section,
@@ -157,4 +182,11 @@ class Chunk:
             "quality_score": self.quality_score,
             "rejected": self.rejected,
             "rejection_reason": self.rejection_reason,
+            # Hiérarchie
+            "chapitre": self.chapitre,
+            "titre": self.titre,
+            "sous_titre": self.sous_titre,
+            "hierarchy_path": self.hierarchy_path,
+            "page_debut": self.page_debut,
+            "page_fin": self.page_fin,
         }
