@@ -44,7 +44,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from workspace_manager import WorkspaceManager
-
+from fastapi.staticfiles import StaticFiles
 
 # ---------------------------------------------------------------------
 # CHARGEMENT DU .ENV
@@ -151,7 +151,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
-
+from pathlib import Path
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 # ---------------------------------------------------------------------
 # PAGE D'ACCUEIL (HTML lu depuis fichier, pas de Jinja2)
