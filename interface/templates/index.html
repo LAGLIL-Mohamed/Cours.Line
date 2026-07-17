@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Pipeline — Générateur de Cours</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --parchment: #F5F0E8;
+            --parchment-dark: #E8E2D6;
+            --ink: #1A1A2E;
+            --ink-light: #2D2D44;
+            --copper: #B87333;
+            --copper-light: #D4915A;
+            --copper-dark: #8A5A28;
+            --gold: #C9A227;
+            --sage: #7A9E7E;
+            --terracotta: #C06C4F;
+            --stone: #8C8C8C;
+            --stone-light: #B0B0B0;
+            --paper: #FFFFFF;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--parchment);
+            color: var(--ink);
+            min-height: 100vh;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* LAYOUT PRINCIPAL — Split asymétrique                                 */
+        /* ------------------------------------------------------------------ */
+        .app {
+            display: grid;
+            grid-template-columns: 42% 58%;
+            min-height: 100vh;
+        }
+
+        @media (max-width: 900px) {
+            .app { grid-template-columns: 1fr; }
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* PANNEAU GAUCHE — Hero + Canvas                                       */
+        /* ------------------------------------------------------------------ */
+        .hero {
+            position: relative;
+            background: var(--ink);
+            color: var(--parchment);
+            padding: 64px 48px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden;
+        }
+
+        .hero-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero-eyebrow {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--copper);
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .hero-eyebrow::before {
+            content: "";
+            display: block;
+            width: 32px;
+            height: 1px;
+            background: var(--copper);
+        }
+
+        .hero h1 {
+            font-family: 'Crimson Pro', Georgia, serif;
+            font-size: clamp(2.2rem, 4vw, 3.4rem);
+            font-weight: 700;
+            line-height: 1.15;
+            margin-bottom: 24px;
+            max-width: 440px;
+        }
+
+        .hero h1 em {
+            font-style: italic;
+            font-weight: 400;
+            color: var(--copper-light);
+        }
+
+        .hero-sub {
+            font-size: 1rem;
+            color: var(--stone-light);
+            max-width: 380px;
+            line-height: 1.7;
+            margin-bottom: 40px;
+        }
+
+        .hero-pipeline {
+            position: relative;
+            z-index: 2;
+            border-top: 1px solid rgba(184, 115, 51, 0.25);
+            padding-top: 28px;
+        }
+
+        .hero-pipeline-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--stone);
+            margin-bottom: 16px;
+        }
+
+        .hero-pipeline-steps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 20px;
+        }
+
+        .hero-pipeline-steps span {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--parchment-dark);
+        }
+
+        .hero-pipeline-steps span::before {
+            content: attr(data-n) ".";
+            color: var(--copper);
+            margin-right: 6px;
+            font-weight: 500;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* PANNEAU DROIT — Formulaire                                           */
+        /* ------------------------------------------------------------------ */
+        .panel {
+            padding: 64px 56px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        @media (max-width: 900px) {
+            .panel { padding: 40px 24px; }
+            .hero { padding: 48px 24px; min-height: 50vh; }
+        }
+
+        .panel-header {
+            margin-bottom: 40px;
+        }
+
+        .panel-header h2 {
+            font-family: 'Crimson Pro', Georgia, serif;
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--ink);
+        }
+
+        .panel-header p {
+            font-size: 0.95rem;
+            color: var(--stone);
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* FORMULAIRE                                                           */
+        /* ------------------------------------------------------------------ */
+        .form-group {
+            margin-bottom: 28px;
+        }
+
+        .form-label {
+            display: block;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--stone);
+            margin-bottom: 10px;
+        }
+
+        .form-label .req {
+            color: var(--copper);
+            margin-left: 4px;
+        }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed var(--stone-light);
+            border-radius: 8px;
+            padding: 32px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.5);
+            position: relative;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--copper);
+            background: rgba(184, 115, 51, 0.04);
+        }
+
+        .drop-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .drop-zone-icon {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            opacity: 0.6;
+        }
+
+        .drop-zone-text {
+            font-size: 0.9rem;
+            color: var(--ink-light);
+            font-weight: 500;
+        }
+
+        .drop-zone-hint {
+            font-size: 0.78rem;
+            color: var(--stone);
+            margin-top: 6px;
+        }
+
+        .file-list {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: var(--paper);
+            border-radius: 6px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.82rem;
+            border: 1px solid var(--parchment-dark);
+        }
+
+        .file-item .file-size {
+            margin-left: auto;
+            color: var(--stone);
+            font-size: 0.75rem;
+        }
+
+        /* Number inputs */
+        .param-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 500px) {
+            .param-row { grid-template-columns: 1fr; }
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1.5px solid var(--parchment-dark);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--paper);
+            color: var(--ink);
+            transition: all 0.25s ease;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--copper);
+            box-shadow: 0 0 0 3px rgba(184, 115, 51, 0.1);
+        }
+
+        /* Checkbox */
+        .checkbox-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 16px;
+            background: rgba(184, 115, 51, 0.04);
+            border: 1px solid rgba(184, 115, 51, 0.15);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .checkbox-row:hover {
+            background: rgba(184, 115, 51, 0.08);
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--copper);
+            margin-top: 2px;
+            cursor: pointer;
+        }
+
+        .checkbox-row label {
+            cursor: pointer;
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: var(--ink-light);
+        }
+
+        .checkbox-row label strong {
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        /* Button */
+        .submit-btn {
+            width: 100%;
+            padding: 18px 24px;
+            background: var(--copper);
+            color: var(--parchment);
+            border: none;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 0.01em;
+        }
+
+        .submit-btn::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+            transition: left 0.6s ease;
+        }
+
+        .submit-btn:hover::after {
+            left: 100%;
+        }
+
+        .submit-btn:hover {
+            background: var(--copper-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(184, 115, 51, 0.25);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* LOADING & TIMELINE                                                   */
+        /* ------------------------------------------------------------------ */
+        .loading {
+            display: none;
+            margin-top: 36px;
+            padding-top: 36px;
+            border-top: 1px solid var(--parchment-dark);
+        }
+
+        .loading-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .spinner {
+            width: 28px;
+            height: 28px;
+            border: 2.5px solid var(--parchment-dark);
+            border-top-color: var(--copper);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-header p {
+            font-size: 0.92rem;
+            color: var(--stone);
+        }
+
+        .loading-header p strong {
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        /* Timeline verticale */
+        .timeline {
+            position: relative;
+            padding-left: 28px;
+        }
+
+        .timeline::before {
+            content: "";
+            position: absolute;
+            left: 8px;
+            top: 6px;
+            bottom: 6px;
+            width: 1.5px;
+            background: var(--parchment-dark);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 18px;
+            font-size: 0.88rem;
+            color: var(--stone);
+            transition: color 0.4s ease;
+        }
+
+        .timeline-item:last-child { padding-bottom: 0; }
+
+        .timeline-item::before {
+            content: attr(data-n);
+            position: absolute;
+            left: -28px;
+            top: 1px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--parchment);
+            border: 1.5px solid var(--stone-light);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--stone);
+            transition: all 0.4s ease;
+            z-index: 2;
+        }
+
+        .timeline-item.running {
+            color: var(--copper);
+            font-weight: 500;
+        }
+
+        .timeline-item.running::before {
+            border-color: var(--copper);
+            color: var(--copper);
+            background: rgba(184, 115, 51, 0.08);
+            box-shadow: 0 0 0 4px rgba(184, 115, 51, 0.1);
+        }
+
+        .timeline-item.done {
+            color: var(--ink);
+        }
+
+        .timeline-item.done::before {
+            border-color: var(--sage);
+            background: var(--sage);
+            color: var(--parchment);
+            content: "✓";
+            font-size: 0.65rem;
+        }
+
+        .timeline-item.skipped {
+            color: var(--stone-light);
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+
+        .timeline-item.skipped::before {
+            border-color: var(--stone-light);
+            color: var(--stone-light);
+            content: "−";
+        }
+
+        .timeline-item.error {
+            color: var(--terracotta);
+            font-weight: 500;
+        }
+
+        .timeline-item.error::before {
+            border-color: var(--terracotta);
+            background: var(--terracotta);
+            color: var(--parchment);
+            content: "!";
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* ALERTES                                                              */
+        /* ------------------------------------------------------------------ */
+        .error-banner {
+            display: none;
+            background: #FDF2F0;
+            border: 1px solid rgba(192, 108, 79, 0.25);
+            color: #8A4A3A;
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 28px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .success-box {
+            display: none;
+            background: #F0F5F1;
+            border: 1px solid rgba(122, 158, 126, 0.3);
+            color: #3A5A40;
+            padding: 24px;
+            border-radius: 8px;
+            margin-top: 28px;
+            font-size: 0.92rem;
+            line-height: 1.7;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .success-box h3 {
+            font-family: 'Crimson Pro', serif;
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+            color: var(--ink);
+        }
+
+        .success-box ul {
+            margin: 10px 0 0 18px;
+            padding: 0;
+        }
+
+        .success-box li {
+            margin-bottom: 4px;
+            list-style: none;
+            position: relative;
+            padding-left: 18px;
+        }
+
+        .success-box li::before {
+            content: "📄";
+            position: absolute;
+            left: -4px;
+            top: 1px;
+            font-size: 0.8rem;
+        }
+
+        .warning-block {
+            margin-top: 14px;
+            padding: 14px;
+            background: #FDF8F0;
+            border: 1px solid rgba(201, 162, 39, 0.25);
+            border-radius: 6px;
+            color: #7A5C20;
+        }
+
+        .warning-block strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .warning-block ul {
+            margin: 0;
+            padding-left: 16px;
+        }
+
+        .warning-block li {
+            margin-bottom: 3px;
+            padding-left: 0;
+        }
+
+        .warning-block li::before { content: none; }
+
+        /* ------------------------------------------------------------------ */
+        /* FOOTER                                                               */
+        /* ------------------------------------------------------------------ */
+        .panel-footer {
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid var(--parchment-dark);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--stone);
+            letter-spacing: 0.02em;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* ACCESSIBILITE                                                        */
+        /* ------------------------------------------------------------------ */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+            .hero-canvas { display: none; }
+        }
+
+        /* Focus visible */
+        input:focus-visible, button:focus-visible {
+            outline: 2px solid var(--copper);
+            outline-offset: 2px;
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="app">
+        <!-- ============================================================== -->
+        <!-- HERO GAUCHE — Thèse visuelle + Canvas RAG                        -->
+        <!-- ============================================================== -->
+        <section class="hero">
+            <canvas class="hero-canvas" id="rag-canvas"></canvas>
+
+            <div class="hero-content">
+                <div class="hero-eyebrow">Pipeline RAG</div>
+                <h1>Transformez le savoir <em>dispersé</em> en enseignement structuré.</h1>
+                <p class="hero-sub">
+                    Uploadez vos documents PDF. Notre moteur d'intelligence augmentée 
+                    extrait, résume, vectorise et génère un cours complet avec plan 
+                    pédagogique et exercices de révision.
+                </p>
+            </div>
+
+            <div class="hero-pipeline">
+                <div class="hero-pipeline-label">Flux de traitement</div>
+                <div class="hero-pipeline-steps">
+                    <span data-n="01">Extraction</span>
+                    <span data-n="02">Résumé</span>
+                    <span data-n="03">Vectorisation</span>
+                    <span data-n="04">Plan IA</span>
+                    <span data-n="05">Cours</span>
+                    <span data-n="06">TD</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- PANNEAU DROIT — Formulaire                                        -->
+        <!-- ============================================================== -->
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Nouvelle génération</h2>
+                <p>Configurez les paramètres de votre cours et soumettez vos documents.</p>
+            </div>
+
+            <div class="error-banner" id="error-banner"></div>
+
+            <form id="rag-form" action="/generate" method="post" enctype="multipart/form-data">
+                <!-- Documents -->
+                <div class="form-group">
+                    <label class="form-label">Documents source <span class="req">*</span></label>
+                    <div class="drop-zone" id="drop-zone">
+                        <input type="file" name="pdfs" id="pdfs" accept=".pdf" multiple required aria-label="Sélectionner des documents PDF">
+                        <div class="drop-zone-icon">📚</div>
+                        <div class="drop-zone-text">Glissez vos PDFs ici ou cliquez pour parcourir</div>
+                        <div class="drop-zone-hint">Maximum 10 fichiers — 50 Mo par fichier — 200 Mo total</div>
+                    </div>
+                    <div class="file-list" id="file-list"></div>
+                </div>
+
+                <!-- Paramètres -->
+                <div class="form-group">
+                    <div class="param-row">
+                        <div>
+                            <label class="form-label" for="pages">Pages du cours</label>
+                            <input type="number" name="pages" id="pages" min="1" max="100" value="10" required>
+                        </div>
+                        <div>
+                            <label class="form-label" for="chapters">Chapitres</label>
+                            <input type="number" name="chapters" id="chapters" min="1" max="20" value="3" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TD -->
+                <div class="form-group">
+                    <div class="checkbox-row" onclick="document.getElementById('generate_td').click()">
+                        <input type="checkbox" name="generate_td" id="generate_td" checked>
+                        <label for="generate_td">
+                            <strong>Générer un TD de révision</strong><br>
+                            Exercices variés (QCM, questions courtes, cas pratique) sur 2 pages maximum
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submit-btn">
+                    Lancer la génération →
+                </button>
+            </form>
+
+            <!-- Loading + Timeline -->
+            <div class="loading" id="loading">
+                <div class="loading-header">
+                    <div class="spinner"></div>
+                    <p><strong>Pipeline en cours d'exécution…</strong><br>Cela peut prendre de 2 à 10 minutes.</p>
+                </div>
+                <div class="timeline" id="steps">
+                    <div class="timeline-item" data-n="01" id="step-1">Extraction hiérarchique des PDFs</div>
+                    <div class="timeline-item" data-n="02" id="step-2">Résumé et structuration</div>
+                    <div class="timeline-item" data-n="03" id="step-3">Vectorisation FAISS</div>
+                    <div class="timeline-item" data-n="04" id="step-4">Génération du plan de cours</div>
+                    <div class="timeline-item" data-n="05" id="step-5">Rédaction du cours complet</div>
+                    <div class="timeline-item" data-n="06" id="step-6">Génération du TD</div>
+                </div>
+            </div>
+
+            <div class="success-box" id="success-box"></div>
+
+            <div class="panel-footer">
+                Workspace isolé • Session jetable • Aucun fichier conservé après génération
+            </div>
+        </section>
+    </div>
+
+    <script>
+        /* ================================================================ */
+        /* CANVAS RAG — Particules de texte → Structure                     */
+        /* ================================================================ */
+        (function() {
+            const canvas = document.getElementById('rag-canvas');
+            const ctx = canvas.getContext('2d');
+            let W, H, particles = [], rows = [];
+            const COLORS = {
+                raw: 'rgba(184, 115, 51, 0.35)',
+                retrieving: 'rgba(201, 162, 39, 0.55)',
+                structured: 'rgba(245, 240, 232, 0.85)'
+            };
+
+            function resize() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                W = canvas.width = rect.width * window.devicePixelRatio;
+                H = canvas.height = rect.height * window.devicePixelRatio;
+                ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                W /= window.devicePixelRatio;
+                H /= window.devicePixelRatio;
+            }
+
+            class Particle {
+                constructor() {
+                    this.reset();
+                }
+                reset() {
+                    this.x = Math.random() * W * 0.35;
+                    this.y = Math.random() * H;
+                    this.vx = (Math.random() - 0.3) * 0.4;
+                    this.vy = (Math.random() - 0.5) * 0.3;
+                    this.size = Math.random() * 2 + 1;
+                    this.phase = 'raw'; // raw → retrieving → structured
+                    this.phaseTimer = Math.random() * 300;
+                    this.targetRow = Math.floor(Math.random() * 6);
+                    this.targetX = 0;
+                    this.targetY = 0;
+                    this.alpha = Math.random() * 0.5 + 0.2;
+                }
+                update() {
+                    this.phaseTimer++;
+                    // Cycle: raw (0-200) → retrieving (200-350) → structured (350-500) → reset
+                    const cycle = this.phaseTimer % 500;
+                    if (cycle < 200) {
+                        this.phase = 'raw';
+                        this.x += this.vx;
+                        this.y += this.vy;
+                        // Bounds
+                        if (this.x < 0 || this.x > W * 0.4) this.vx *= -1;
+                        if (this.y < 0 || this.y > H) this.vy *= -1;
+                    } else if (cycle < 350) {
+                        this.phase = 'retrieving';
+                        const centerX = W * 0.5;
+                        const centerY = H * 0.5;
+                        this.x += (centerX - this.x) * 0.02;
+                        this.y += (centerY - this.y) * 0.02;
+                    } else {
+                        this.phase = 'structured';
+                        const rowH = H / 8;
+                        this.targetY = rowH * (this.targetRow + 1.5);
+                        this.targetX = W * 0.55 + (Math.random() * W * 0.35);
+                        this.x += (this.targetX - this.x) * 0.04;
+                        this.y += (this.targetY - this.y) * 0.04;
+                    }
+                }
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fillStyle = COLORS[this.phase];
+                    ctx.fill();
+                }
+            }
+
+            // Structured rows (visual reference)
+            function drawRows() {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(245, 240, 232, 0.06)';
+                ctx.lineWidth = 1;
+                const rowH = H / 8;
+                for (let i = 1; i <= 6; i++) {
+                    const y = rowH * (i + 0.5);
+                    ctx.beginPath();
+                    ctx.moveTo(W * 0.5, y);
+                    ctx.lineTo(W * 0.95, y);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            function init() {
+                resize();
+                for (let i = 0; i < 90; i++) particles.push(new Particle());
+                animate();
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, W, H);
+                drawRows();
+                particles.forEach(p => { p.update(); p.draw(); });
+                requestAnimationFrame(animate);
+            }
+
+            window.addEventListener('resize', resize);
+            init();
+        })();
+
+        /* ================================================================ */
+        /* LOGIQUE APPLICATION                                                */
+        /* ================================================================ */
+        const form = document.getElementById('rag-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const loadingBox = document.getElementById('loading');
+        const errorBanner = document.getElementById('error-banner');
+        const successBox = document.getElementById('success-box');
+        const fileInput = document.getElementById('pdfs');
+        const dropZone = document.getElementById('drop-zone');
+        const fileList = document.getElementById('file-list');
+        const STEP_COUNT = 6;
+        let pollTimer = null;
+
+        // --- Drag & Drop ---
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
+            updateFileList();
+        });
+        fileInput.addEventListener('change', updateFileList);
+
+        function formatSize(bytes) {
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' Ko';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            const files = fileInput.files;
+            if (!files.length) return;
+            for (let f of files) {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `<span>📄 ${f.name}</span><span class="file-size">${formatSize(f.size)}</span>`;
+                fileList.appendChild(div);
+            }
+        }
+
+        function generateSessionId() {
+            if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+            return 'sess-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        }
+
+        function resetSteps() {
+            for (let i = 1; i <= STEP_COUNT; i++) {
+                const li = document.getElementById('step-' + i);
+                li.classList.remove('done', 'running', 'error', 'skipped');
+            }
+        }
+
+        function setStepStatus(i, status) {
+            const li = document.getElementById('step-' + i);
+            if (!li) return;
+            li.classList.remove('done', 'running', 'error', 'skipped');
+            if (status && status !== 'pending') li.classList.add(status);
+        }
+
+        async function pollProgress(sessionId) {
+            try {
+                const resp = await fetch('/api/progress/' + encodeURIComponent(sessionId));
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const steps = (data && data.steps) || {};
+                for (let i = 1; i <= STEP_COUNT; i++) {
+                    const st = steps[String(i)] ? steps[String(i)].status : 'pending';
+                    setStepStatus(i, st);
+                }
+            } catch (_) {}
+        }
+
+        function startPolling(sessionId) {
+            stopPolling();
+            pollProgress(sessionId);
+            pollTimer = setInterval(() => pollProgress(sessionId), 2000);
+        }
+
+        function stopPolling() {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+
+        function setLoading(on) {
+            loadingBox.style.display = on ? 'block' : 'none';
+            submitBtn.disabled = on;
+            submitBtn.textContent = on ? '⏳ Traitement en cours…' : 'Lancer la génération →';
+        }
+
+        function showError(msg) {
+            errorBanner.textContent = msg;
+            errorBanner.style.display = 'block';
+        }
+
+        function showSuccess(report) {
+            const files = (report && report.files) || [];
+            const warnings = (report && report.warnings) || [];
+            let html = '<h3>Génération terminée</h3><p>Le fichier ZIP a été téléchargé automatiquement.</p>';
+            if (files.length) {
+                html += '<ul>';
+                files.forEach(f => { html += `<li>${f}</li>`; });
+                html += '</ul>';
+            }
+            if (report && report.td_requested && !report.td_generated
+                && !warnings.some(w => w.toLowerCase().includes('td'))) {
+                warnings.push("Le TD demandé n'a pas pu être généré.");
+            }
+            if (warnings.length) {
+                html += '<div class="warning-block"><strong>Avertissements</strong><ul>';
+                warnings.forEach(w => { html += `<li>${w}</li>`; });
+                html += '</ul></div>';
+            }
+            successBox.innerHTML = html;
+            successBox.style.display = 'block';
+        }
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const files = fileInput.files;
+
+            // Validation
+            if (files.length === 0) { showError('Veuillez sélectionner au moins un fichier PDF.'); return; }
+            if (files.length > 10) { showError('Maximum 10 fichiers PDF autorisés.'); return; }
+            let totalSize = 0;
+            for (let f of files) {
+                totalSize += f.size;
+                if (f.size > 50 * 1024 * 1024) { showError('Le fichier "' + f.name + '" dépasse 50 Mo.'); return; }
+            }
+            if (totalSize > 200 * 1024 * 1024) { showError('La taille totale dépasse 200 Mo.'); return; }
+
+            // UI
+            errorBanner.style.display = 'none';
+            successBox.style.display = 'none';
+            successBox.innerHTML = '';
+            resetSteps();
+            setLoading(true);
+
+            const sessionId = generateSessionId();
+            const fd = new FormData(form);
+            fd.append('session_id', sessionId);
+            fd.set('generate_td', document.getElementById('generate_td').checked ? 'true' : 'false');
+
+            startPolling(sessionId);
+
+            try {
+                const resp = await fetch('/generate', { method: 'POST', body: fd });
+                if (!resp.ok) {
+                    let msg = 'Erreur serveur (HTTP ' + resp.status + ').';
+                    try { const data = await resp.json(); if (data && data.detail) msg = data.detail; } catch (_) {}
+                    throw new Error(msg);
+                }
+                let report = null;
+                try {
+                    const raw = resp.headers.get('X-RAG-Report');
+                    if (raw) report = JSON.parse(decodeURIComponent(raw));
+                } catch (_) {}
+                let filename = 'cours_rag.zip';
+                const cd = resp.headers.get('Content-Disposition') || '';
+                const m = cd.match(/filename="?([^";]+)"?/);
+                if (m) filename = m[1];
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filename;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                stopPolling();
+                setLoading(false);
+                showSuccess(report);
+            } catch (err) {
+                stopPolling();
+                setLoading(false);
+                showError(err.message || "Une erreur inconnue est survenue.");
+            }
+        });
+    </script>
+</body>
+</html>

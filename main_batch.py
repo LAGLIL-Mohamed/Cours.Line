@@ -1,5 +1,16 @@
 ﻿#!/usr/bin/env python3
-"""Version batch (non-interactive) du pipeline RAG."""
+"""Version batch (non-interactive) du pipeline RAG.
+
+Modifications (integration web) :
+    - ProgressReporter : ecrit progress.json a la racine du workspace
+      pour que l'interface web suive les etapes EN TEMPS REEL.
+    - Phase 5 (TD) : retry avec backoff + avertissements remontes dans
+      le resultat JSON au lieu d'un echec silencieux.
+    - Le JSON final est aussi imprime sur UNE ligne prefixee
+      RAG_RESULT_JSON: pour etre parse de facon fiable par le
+      workspace_manager (l'ancien JSON multi-lignes n'etait jamais
+      reconnu -> fallback systematique).
+"""
 
 import os
 import sys
@@ -7,6 +18,84 @@ import json
 import time
 import importlib.util
 from pathlib import Path
+from datetime import datetime
+
+
+# ---------------------------------------------------------------------
+# SUIVI DE PROGRESSION (lu par app.py -> /api/progress/<session_id>)
+# ---------------------------------------------------------------------
+class ProgressReporter:
+    """Ecrit l'etat d'avancement dans <workspace>/progress.json.
+
+    Statuts d'etape : pending | running | done | skipped | error
+    Statut global   : running | done | error
+    """
+
+    STEP_NAMES = {
+        1: "Extraction hierarchique des PDFs",
+        2: "Resume et structuration",
+        3: "Vectorisation FAISS",
+        4: "Generation du plan de cours",
+        5: "Redaction du cours complet",
+        6: "Generation du TD",
+    }
+
+    def __init__(self, project_root):
+        self.path = Path(project_root) / "progress.json"
+        self.steps = {
+            str(i): {"name": name, "status": "pending"}
+            for i, name in self.STEP_NAMES.items()
+        }
+        self.status = "running"
+        self.error = None
+        self.current_step = None
+        self._write()
+
+    def _write(self):
+        data = {
+            "status": self.status,
+            "error": self.error,
+            "current_step": self.current_step,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "steps": self.steps,
+        }
+        try:
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(self.path)  # ecriture atomique
+        except Exception as e:
+            print(f"[WARN] Impossible d'ecrire progress.json : {e}")
+
+    def start(self, step):
+        self.current_step = step
+        self.steps[str(step)]["status"] = "running"
+        self._write()
+
+    def done(self, step):
+        self.steps[str(step)]["status"] = "done"
+        self._write()
+
+    def skipped(self, step):
+        self.steps[str(step)]["status"] = "skipped"
+        self._write()
+
+    def step_error(self, step, message):
+        """Erreur NON fatale (ex: TD) : l'etape est en echec mais le
+        pipeline continue et livre les autres fichiers."""
+        self.steps[str(step)]["status"] = "error"
+        self._write()
+
+    def fail(self, step, message):
+        """Erreur fatale : tout le pipeline est en echec."""
+        if step:
+            self.steps[str(step)]["status"] = "error"
+        self.status = "error"
+        self.error = message
+        self._write()
+
+    def finish(self):
+        self.status = "done"
+        self._write()
 
 
 def load_module_from_path(module_name, file_path):
@@ -20,7 +109,19 @@ def load_module_from_path(module_name, file_path):
 
 
 def run_pipeline(config, project_root):
+    # Le reporter est cree AVANT tout le reste pour que meme une erreur
+    # d'import soit visible cote interface web.
+    reporter = ProgressReporter(project_root)
+    try:
+        return _run_pipeline_inner(config, project_root, reporter)
+    except Exception as e:
+        reporter.fail(reporter.current_step, f"{type(e).__name__}: {e}")
+        raise
+
+
+def _run_pipeline_inner(config, project_root, reporter):
     RAG_ROOT = project_root / "rag"
+    warnings = []
 
     # Chargement dynamique des modules
     _reterevel = load_module_from_path("reterevel", project_root / "reterevel.py")
@@ -355,7 +456,10 @@ CONTRAINTES ABSOLUES :
 
         course_json_path = cfg.output_dir / "course.json"
         if not course_json_path.exists():
-            print("ERREUR : course.json introuvable. Generez d'abord le cours.")
+            msg = "TD non genere : course.json introuvable (le cours doit etre genere d'abord)."
+            print(f"ERREUR : {msg}")
+            warnings.append(msg)
+            reporter.step_error(6, msg)
             return
 
         with open(course_json_path, "r", encoding="utf-8") as f:
@@ -425,11 +529,31 @@ Genere le TD maintenant."""
             {"role": "user", "content": prompt}
         ]
 
+        # --- APPEL MISTRAL AVEC RETRY (au lieu d'un echec silencieux) ---
         print("Generation du TD par Mistral...")
-        try:
-            td_content = client.chat(messages, temperature=0.4)
-        except Exception as e:
-            print(f"ERREUR lors de la generation du TD : {e}")
+        td_content = None
+        last_error = None
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                td_content = client.chat(messages, temperature=0.4)
+                break
+            except Exception as e:
+                last_error = e
+                print(f"ERREUR TD (tentative {attempt}/{max_attempts}) : {e}")
+                if attempt < max_attempts:
+                    wait_s = 10 * attempt
+                    print(f"Nouvelle tentative dans {wait_s}s...")
+                    time.sleep(wait_s)
+
+        if td_content is None:
+            msg = (
+                f"Le TD n'a pas pu etre genere apres {max_attempts} tentatives "
+                f"(derniere erreur : {last_error}). Le cours reste disponible."
+            )
+            print(f"ERREUR : {msg}")
+            warnings.append(msg)
+            reporter.step_error(6, msg)
             return
 
         td_content = td_content.strip()
@@ -465,26 +589,52 @@ Genere le TD maintenant."""
 
     if has_chunks and skip_extraction:
         print("\nPhase 1 ignoree (chunks existants + skip_extraction=True).")
+        reporter.skipped(1)
     else:
+        reporter.start(1)
         phase1_extraction()
+        reporter.done(1)
 
     if has_summary and skip_summary:
         print("\nPhase 2 ignoree (resume existant + skip_summary=True).")
+        reporter.skipped(2)
     else:
+        reporter.start(2)
         phase2_summary()
+        reporter.done(2)
 
     if has_index and skip_indexing:
         print("\nPhase 2bis ignoree (index existant + skip_indexing=True).")
+        reporter.skipped(3)
     else:
+        reporter.start(3)
         phase2bis_vectorization()
+        reporter.done(3)
 
+    reporter.start(4)
     phase3_plan()
+    reporter.done(4)
+
+    reporter.start(5)
     phase4_generation_cours()
+    reporter.done(5)
 
     if generate_td:
+        reporter.start(6)
         phase5_generation_td()
+        # Le statut final de l'etape 6 est gere dans phase5 :
+        # 'done' si le fichier existe, 'error' sinon (deja signale).
+        td_path = CourseConfig(project_root=project_root, mistral_api_key=mistral_api_key).output_dir / "td.md"
+        if td_path.exists():
+            reporter.done(6)
     else:
         print("\nPhase 5 (TD) ignoree (generate_td=False).")
+        reporter.skipped(6)
+    
+    reporter.skipped(6)
+    print("\nPhase 5 ingonere pour test .")
+    
+    reporter.finish()
 
     print("\n" + "=" * 70)
     print("TOUT EST TERMINE !")
@@ -501,7 +651,8 @@ Genere le TD maintenant."""
             "course_json": str(out_dir / "course.json") if (out_dir / "course.json").exists() else None,
             "plan_json": str(out_dir / "plan.json") if (out_dir / "plan.json").exists() else None,
             "td_md": str(out_dir / "td.md") if (out_dir / "td.md").exists() else None,
-        }
+        },
+        "warnings": warnings,
     }
 
     return result
@@ -522,6 +673,9 @@ if __name__ == "__main__":
 
         project_root = Path(args.project_root)
         result = run_pipeline(config, project_root)
+        # Ligne machine lisible par workspace_manager (parsing fiable)
+        print("RAG_RESULT_JSON:" + json.dumps(result, ensure_ascii=False))
+        # Version lisible pour l'humain
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
         print(f"\nERREUR FATALE DANS main_batch.py:")

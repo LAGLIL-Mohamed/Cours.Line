@@ -180,7 +180,7 @@ Chaque nœud doit contenir : id, titre, niveau, objectif, enfants (liste, même 
                 count += self._count_sections(node["enfants"])
         return count
 
-    def _validate_plan(self, nodes: list, parent_id: str = "") -> None:
+    """def _validate_plan(self, nodes: list, parent_id: str = "") -> None:
         if len(nodes) > 4:
             raise ValueError(f"Trop de chapitres : {len(nodes)} (max 4)")
 
@@ -216,4 +216,60 @@ Chaque nœud doit contenir : id, titre, niveau, objectif, enfants (liste, même 
                     raise ValueError(
                         f"Trop de sections dans {node['id']} : {len(node['enfants'])} (max 3)"
                     )
+                self._validate_plan(node["enfants"], node["id"])"""
+    def _validate_plan(self, nodes: list, parent_id: str = "") -> None:
+        if len(nodes) > 4:
+            raise ValueError(f"Trop de chapitres : {len(nodes)} (max 4)")
+
+        for i, node in enumerate(nodes):
+            if "id" not in node:
+                node["id"] = f"{parent_id}_sec{i+1}" if parent_id else f"ch{i+1}"
+            if "titre" not in node or "objectif" not in node or "niveau" not in node:
+                raise ValueError(f"Section invalide : {node}")
+
+            if "enfants" not in node:
+                node["enfants"] = []
+
+            if node["niveau"] > 2:
+                raise ValueError(
+                    f"Niveau trop profond ({node['niveau']}) pour la section {node['id']}. Max : 2."
+                )
+
+            if len(node.get("objectif", "")) > 150:
+                raise ValueError(
+                    f"Objectif trop long pour {node['id']} : max 150 caractères."
+                )
+
+            for field in ["titre", "objectif"]:
+                value = node.get(field, "")
+                if re.search(r"\\[a-zA-Z]+", value):
+                    raise ValueError(
+                        f"LaTeX détecté dans {field} de {node['id']} : '{value[:50]}...'. "
+                        f"Utilise du texte brut uniquement, pas de \\section, \\textbf, etc."
+                    )
+
+            # --- CORRECTION : Fusionner les sections excédentaires au lieu de planter ---
+            if node["enfants"]:
+                if len(node["enfants"]) > 3:
+                    extra = node["enfants"][3:]      # sections 4, 5, 6...
+                    kept = node["enfants"][:3]       # garder les 3 premières
+                    
+                    last = kept[-1]
+                    extra_titres = [e.get("titre", "") for e in extra]
+                    extra_objectifs = [e.get("objectif", "") for e in extra]
+                    
+                    # Fusionner titres et objectifs
+                    last["titre"] = last.get("titre", "") + " (incl. " + ", ".join(extra_titres) + ")"
+                    last["objectif"] = last.get("objectif", "") + " ; " + " ; ".join(extra_objectifs)
+                    
+                    # Fusionner les sous-enfants (niveau 3) si présents
+                    for e in extra:
+                        if e.get("enfants"):
+                            if "enfants" not in last:
+                                last["enfants"] = []
+                            last["enfants"].extend(e["enfants"])
+                    
+                    node["enfants"] = kept
+                    print(f"[WARN] {len(extra)} section(s) excédentaire(s) fusionnée(s) dans {node['id']}")
+                
                 self._validate_plan(node["enfants"], node["id"])

@@ -5,6 +5,16 @@ Usage:
     python workspace_manager.py --project "C:/Users/dell/Desktop/Projet python - RAG" \
                                 --pdfs doc1.pdf doc2.pdf \
                                 --pages 10 --chapters 3
+
+Modifications (integration web) :
+    - run_session(..., session_id=...) : l'id fourni par le frontend est
+      utilise pour nommer le workspace, ce qui permet a app.py de lire
+      <workspace>/progress.json pendant l'execution (vrai suivi d'etapes).
+    - Parsing du resultat via la ligne 'RAG_RESULT_JSON:' emise par
+      main_batch.py (l'ancien parsing cherchait un JSON sur UNE ligne,
+      or le JSON etait imprime indente -> jamais reconnu -> fallback).
+    - Les 'warnings' du pipeline (ex: TD non genere) sont propages
+      jusqu'a la reponse HTTP.
 """
 
 import os
@@ -101,7 +111,7 @@ class WorkspaceManager:
         """
         original_str = str(self.original_project_root)
         workspace_str = str(workspace)
-        
+
         # Variantes du chemin original (backslash et slash, avec et sans /rag)
         variants = [
             original_str,
@@ -109,39 +119,40 @@ class WorkspaceManager:
             original_str + "\\rag",
             original_str.replace("\\", "/") + "/rag",
         ]
-        
+
         workspace_variants = [
             workspace_str,
             workspace_str.replace("\\", "/"),
             workspace_str + "\\rag",
             workspace_str.replace("\\", "/") + "/rag",
         ]
-        
+
         patched_files = []
-        
+
         for py_file in workspace.rglob("*.py"):
             try:
                 content = py_file.read_text(encoding="utf-8")
                 new_content = content
                 has_patch = False
-                
+
                 for orig_var, ws_var in zip(variants, workspace_variants):
                     if orig_var in new_content:
                         new_content = new_content.replace(orig_var, ws_var)
                         has_patch = True
-                
+
                 if has_patch and new_content != content:
                     py_file.write_text(new_content, encoding="utf-8")
                     patched_files.append(py_file.relative_to(workspace))
             except Exception as e:
                 print(f"[WARN] Impossible de patcher {py_file}: {e}")
-        
+
         if patched_files:
             print(f"[PATCH] {len(patched_files)} fichier(s) corrige(s) :")
             for f in patched_files:
                 print(f"        -> {f}")
         else:
             print("[PATCH] Aucun chemin absolu detecte (deja relatif ou dynamique)")
+
     def copy_project(self, workspace: Path) -> None:
         """Copie le code source du projet original vers le workspace."""
         print(f"\n[COPY] Copie du projet vers {workspace}...")
@@ -187,6 +198,43 @@ class WorkspaceManager:
             print(f"     [FILE] {pdf_path.name} -> {dest}")
 
         print(f"[OK] {len(pdf_files)} PDF(s) injecte(s).")
+
+    @staticmethod
+    def _parse_pipeline_output(stdout: str) -> Optional[dict]:
+        """Extrait le JSON de resultat emis par main_batch.py.
+
+        1. Cherche la ligne prefixee 'RAG_RESULT_JSON:' (fiable).
+        2. Fallback : ancienne heuristique (JSON sur une seule ligne).
+        """
+        lines = [l for l in (stdout or "").strip().split("\n") if l.strip()]
+
+        for line in reversed(lines):
+            line = line.strip()
+            if line.startswith("RAG_RESULT_JSON:"):
+                try:
+                    return json.loads(line[len("RAG_RESULT_JSON:"):])
+                except json.JSONDecodeError:
+                    continue
+
+        for line in reversed(lines):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+        return None
+
+    def get_progress(self, session_id: str) -> Optional[dict]:
+        """Lit <workspace>/progress.json pour une session en cours (ou None)."""
+        progress_file = self.workspaces_dir / f"session_{session_id}" / "progress.json"
+        if not progress_file.exists():
+            return None
+        try:
+            return json.loads(progress_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
 
     def run_pipeline(self, workspace: Path, config: dict) -> dict:
         """Lance le pipeline batch dans le workspace via un sous-processus isole."""
@@ -245,23 +293,15 @@ class WorkspaceManager:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
 
-            lines = [l for l in result.stdout.strip().split("\n") if l.strip()]
-            output = None
-            for line in reversed(lines):
-                line = line.strip()
-                if line.startswith("{") and line.endswith("}"):
-                    try:
-                        output = json.loads(line)
-                        break
-                    except json.JSONDecodeError:
-                        continue
+            output = self._parse_pipeline_output(result.stdout)
 
             if output is None:
                 print("[WARN] Impossible de parser le resultat JSON, fallback")
                 output = {
                     "success": True,
                     "output_dir": str(workspace / "rag" / "data" / "output"),
-                    "files": {}
+                    "files": {},
+                    "warnings": [],
                 }
 
             return output
@@ -280,7 +320,7 @@ STDERR:
             print(error_msg)
             raise RuntimeError(error_msg)
 
-    def collect_results(self, workspace: Path) -> Dict[str, bytes]:
+    def collect_results(self, workspace: Path, pipeline_result: Optional[dict] = None) -> Dict[str, bytes]:
         """Recupere les fichiers generes depuis le workspace."""
         output_dir = workspace / "rag" / "data" / "output"
         results = {}
@@ -289,14 +329,22 @@ STDERR:
 
         print(f"\n[GET] Recuperation des resultats depuis {output_dir}...")
 
-        for filename in expected_files:
-            file_path = output_dir / filename
-            if file_path.exists():
-                with open(file_path, "rb") as f:
-                    results[filename] = f.read()
-                print(f"      [OK] {filename} ({len(results[filename])} bytes)")
-            else:
-                print(f"      [WARN] {filename} non trouve")
+        # --- CORRECTION : Chercher aussi dans output/course_generated/ ---
+        search_dirs = [output_dir, output_dir / "course_generated"]
+        
+        for search_dir in search_dirs:
+            if not search_dir.exists():
+                continue
+            for filename in expected_files:
+                if filename in results:  # Déjà trouvé dans un dossier précédent
+                    continue
+                file_path = search_dir / filename
+                if file_path.exists():
+                    with open(file_path, "rb") as f:
+                        results[filename] = f.read()
+                    print(f"      [OK] {filename} ({len(results[filename])} bytes) depuis {search_dir.name}")
+                else:
+                    print(f"      [WARN] {filename} non trouve dans {search_dir.name}")
 
         return results
 
@@ -306,31 +354,47 @@ STDERR:
             shutil.rmtree(workspace)
             print(f"[DEL] Workspace supprime : {workspace}")
 
-    def run_session(self, 
+    def run_session(self,
                     pdf_files: List[Path],
                     config: dict,
-                    keep_workspace: bool = False) -> dict:
+                    keep_workspace: bool = False,
+                    session_id: Optional[str] = None) -> dict:
         """
         Pipeline complet : creation -> copie -> patch -> injection -> execution -> recuperation -> nettoyage.
         """
         workspace = None
+        files_data = {}
+        pipeline_result = {"success": False, "warnings": []}
+        error_msg = None
+
         try:
-            workspace = self.create_workspace()
+            workspace = self.create_workspace(session_id=session_id)
             self.copy_project(workspace)
             self.inject_pdfs(workspace, pdf_files)
             pipeline_result = self.run_pipeline(workspace, config)
             files_data = self.collect_results(workspace)
 
-            return {
-                "success": pipeline_result.get("success", True),
-                "session_id": workspace.name,
-                "files": files_data,
-                "paths": pipeline_result.get("files", {}),
-            }
+        except Exception as e:
+            # --- CORRECTION : Récupérer les fichiers partiels avant nettoyage ---
+            error_msg = str(e)
+            print(f"\n[WARN] Pipeline interrompu : {error_msg}")
+            if workspace and workspace.exists():
+                files_data = self.collect_results(workspace)
+                print(f"[WARN] Fichiers partiels recuperes : {list(files_data.keys())}")
+            pipeline_result["success"] = bool(files_data)
+            pipeline_result["warnings"] = [error_msg]
 
         finally:
             if workspace and not keep_workspace:
                 self.cleanup(workspace)
+
+        return {
+            "success": pipeline_result.get("success", True) or bool(files_data),
+            "session_id": workspace.name if workspace else (session_id or "unknown"),
+            "files": files_data,
+            "paths": pipeline_result.get("files", {}),
+            "warnings": pipeline_result.get("warnings", []),
+        }
 
     run_session_sync = run_session
 
@@ -342,15 +406,15 @@ def main():
     """Test manuel du workspace manager en ligne de commande."""
     import argparse
     parser = argparse.ArgumentParser(description="Test du Workspace Manager")
-    parser.add_argument("--project", "-p", required=True, 
+    parser.add_argument("--project", "-p", required=True,
                         help="Chemin du projet original (ex: C:/Users/.../Projet python - RAG)")
-    parser.add_argument("--pdfs", required=True, nargs="+", 
+    parser.add_argument("--pdfs", required=True, nargs="+",
                         help="Chemins des PDFs a traiter")
-    parser.add_argument("--pages", type=int, default=10, 
+    parser.add_argument("--pages", type=int, default=10,
                         help="Nombre de pages du cours")
-    parser.add_argument("--chapters", type=int, default=3, 
+    parser.add_argument("--chapters", type=int, default=3,
                         help="Nombre de chapitres")
-    parser.add_argument("--keep", action="store_true", 
+    parser.add_argument("--keep", action="store_true",
                         help="Garder le workspace apres execution (debug)")
     parser.add_argument("--skip-extraction", action="store_true",
                         help="Sauter l'extraction si des chunks existent")
@@ -397,6 +461,7 @@ def main():
     print(f"Succes      : {result['success']}")
     print(f"Session ID  : {result['session_id']}")
     print(f"Fichiers    : {list(result['files'].keys())}")
+    print(f"Warnings    : {result.get('warnings', [])}")
     print("=" * 70)
 
     if result["files"]:
