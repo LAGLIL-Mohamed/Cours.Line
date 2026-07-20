@@ -9,7 +9,7 @@ import os
 class CourseConfig:
     """Paramètres de génération de cours."""
 
-    project_root: Path = Path(r"C:\Users\dell\Desktop\Projet python - RAG")
+    project_root: Path = Path(__file__).resolve().parent
 
     hierarchy_summary_path: Path = None
     vector_store_dir: Path = None

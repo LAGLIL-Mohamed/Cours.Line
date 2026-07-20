@@ -48,3 +48,7 @@ Sources/
 Nouveau dossier/
 output/
 vector_store/
+main.py
+mainCli.py
+mainCli1.py
+MdToPdf/md_to_academic_pdfCli.py

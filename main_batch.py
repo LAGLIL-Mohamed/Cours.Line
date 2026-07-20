@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Version batch (non-interactive) du pipeline RAG.
 
 Modifications (integration web) :

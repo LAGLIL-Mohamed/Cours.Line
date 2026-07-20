@@ -1,38 +1,39 @@
 ﻿#!/usr/bin/env python3
-"""CLI : construit l'index FAISS a partir de chunks.jsonl (multi-PDF)."""
+"""CLI : construit l'index FAISS à partir de chunks.jsonl (multi-PDF)."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from vectorization import BGEEmbedder, FAISSIndexer, MetadataStore, VectorConfig
 
 
-def main() -> int:
-    config = VectorConfig()
+def main(config: VectorConfig | None = None) -> int:
+    """Construit l'index FAISS. Accepte un VectorConfig custom."""
+    if config is None:
+        config = VectorConfig()
 
     print("=" * 60)
     print("CONSTRUCTION DE L'INDEX FAISS (MULTI-PDF)")
     print("=" * 60)
     print()
 
-    # Decouverte automatique des fichiers chunks.jsonl
     chunks_files = config.discover_chunks_files()
 
     if not chunks_files:
-        print("ERREUR : Aucun chunks.jsonl trouve.")
+        print("ERREUR : Aucun chunks.jsonl trouvé.")
         print()
-        print("Verifiez que :")
+        print("Vérifiez que :")
         print(f"  1. Le dossier existe : {config.chunks_input_dir}")
         print(f"  2. Des sous-dossiers contiennent un fichier 'chunks.jsonl'")
         print()
         return 1
 
-    print(f"Fichiers detectes : {len(chunks_files)}")
+    print(f"Fichiers détectés : {len(chunks_files)}")
     for cf in chunks_files:
         print(f"  -> {cf}")
     print()
@@ -41,7 +42,7 @@ def main() -> int:
     embeddings = embedder.embed_chunks_from_files(chunks_files)
 
     if not embeddings:
-        print("Aucun chunk a indexer.")
+        print("Aucun chunk à indexer.")
         return 1
 
     indexer = FAISSIndexer(config)
@@ -53,9 +54,9 @@ def main() -> int:
 
     print()
     print("=" * 60)
-    print("INDEX CONSTRUIT AVEC SUCCES")
+    print("INDEX CONSTRUIT AVEC SUCCÈS")
     print(f"  -> Index FAISS : {config.faiss_index_path}")
-    print(f"  -> Metadonnees : {config.metadata_path}")
+    print(f"  -> Métadonnées : {config.metadata_path}")
     print(f"  -> Vecteurs    : {indexer.n_vectors}")
     print(f"  -> Sources     : {len(chunks_files)} PDF(s)")
     print("=" * 60)
