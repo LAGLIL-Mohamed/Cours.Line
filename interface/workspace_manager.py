@@ -1,27 +1,10 @@
 #!/usr/bin/env python3
-"""Orchestrateur de workspace : cree une copie temporaire du projet pour chaque session.
-
-Usage:
-    python workspace_manager.py --project "C:/Users/dell/Desktop/Projet python - RAG" \
-                                --pdfs doc1.pdf doc2.pdf \
-                                --pages 10 --chapters 3
-
-Modifications (integration web) :
-    - run_session(..., session_id=...) : l'id fourni par le frontend est
-      utilise pour nommer le workspace, ce qui permet a app.py de lire
-      <workspace>/progress.json pendant l'execution (vrai suivi d'etapes).
-    - Parsing du resultat via la ligne 'RAG_RESULT_JSON:' emise par
-      main_batch.py (l'ancien parsing cherchait un JSON sur UNE ligne,
-      or le JSON etait imprime indente -> jamais reconnu -> fallback).
-    - Les 'warnings' du pipeline (ex: TD non genere) sont propages
-      jusqu'a la reponse HTTP.
-"""
+"""Orchestrateur de workspace : cree une copie temporaire du projet pour chaque session."""
 
 import os
 import sys
 import json
 import shutil
-import tempfile
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -36,11 +19,10 @@ class WorkspaceManager:
     Cycle de vie :
         1. Creation d'un dossier temporaire unique
         2. Copie du code source (sans les donnees generees)
-        3. PATCH AUTOMATIQUE des chemins absolus
-        4. Injection des PDFs uploades
-        5. Execution du pipeline batch
-        6. Recuperation des fichiers generes
-        7. Nettoyage (optionnel)
+        3. Injection des PDFs uploades
+        4. Execution du pipeline batch
+        5. Recuperation des fichiers generes
+        6. Nettoyage (optionnel)
     """
 
     EXCLUDE_DIRS = {
@@ -56,7 +38,6 @@ class WorkspaceManager:
         """
         Args:
             original_project_root: chemin absolu vers le projet RAG original
-                                  (ex: C:/Users/dell/Desktop/Projet python - RAG)
         """
         self.original_project_root = Path(original_project_root).resolve()
         if not self.original_project_root.exists():
@@ -103,56 +84,6 @@ class WorkspaceManager:
             return False
         return True
 
-    def _patch_absolute_paths(self, workspace: Path) -> None:
-        """
-        SOLUTION DURABLE : Remplace les chemins absolus vers le projet original
-        par le chemin du workspace dans tous les fichiers .py.
-        Le projet original reste intact.
-        """
-        original_str = str(self.original_project_root)
-        workspace_str = str(workspace)
-
-        # Variantes du chemin original (backslash et slash, avec et sans /rag)
-        variants = [
-            original_str,
-            original_str.replace("\\", "/"),
-            original_str + "\\rag",
-            original_str.replace("\\", "/") + "/rag",
-        ]
-
-        workspace_variants = [
-            workspace_str,
-            workspace_str.replace("\\", "/"),
-            workspace_str + "\\rag",
-            workspace_str.replace("\\", "/") + "/rag",
-        ]
-
-        patched_files = []
-
-        for py_file in workspace.rglob("*.py"):
-            try:
-                content = py_file.read_text(encoding="utf-8")
-                new_content = content
-                has_patch = False
-
-                for orig_var, ws_var in zip(variants, workspace_variants):
-                    if orig_var in new_content:
-                        new_content = new_content.replace(orig_var, ws_var)
-                        has_patch = True
-
-                if has_patch and new_content != content:
-                    py_file.write_text(new_content, encoding="utf-8")
-                    patched_files.append(py_file.relative_to(workspace))
-            except Exception as e:
-                print(f"[WARN] Impossible de patcher {py_file}: {e}")
-
-        if patched_files:
-            print(f"[PATCH] {len(patched_files)} fichier(s) corrige(s) :")
-            for f in patched_files:
-                print(f"        -> {f}")
-        else:
-            print("[PATCH] Aucun chemin absolu detecte (deja relatif ou dynamique)")
-
     def copy_project(self, workspace: Path) -> None:
         """Copie le code source du projet original vers le workspace."""
         print(f"\n[COPY] Copie du projet vers {workspace}...")
@@ -171,9 +102,6 @@ class WorkspaceManager:
                     shutil.copy2(item, dest_item)
 
         copy_tree(self.original_project_root, workspace)
-
-        # SOLUTION DURABLE : patcher les chemins absolus automatiquement
-        self._patch_absolute_paths(workspace)
 
         if not (workspace / "main_batch.py").exists():
             print("[WARN] main_batch.py n'a pas ete trouve dans le workspace.")
@@ -201,11 +129,7 @@ class WorkspaceManager:
 
     @staticmethod
     def _parse_pipeline_output(stdout: str) -> Optional[dict]:
-        """Extrait le JSON de resultat emis par main_batch.py.
-
-        1. Cherche la ligne prefixee 'RAG_RESULT_JSON:' (fiable).
-        2. Fallback : ancienne heuristique (JSON sur une seule ligne).
-        """
+        """Extrait le JSON de resultat emis par main_batch.py."""
         lines = [l for l in (stdout or "").strip().split("\n") if l.strip()]
 
         for line in reversed(lines):
@@ -329,14 +253,13 @@ STDERR:
 
         print(f"\n[GET] Recuperation des resultats depuis {output_dir}...")
 
-        # --- CORRECTION : Chercher aussi dans output/course_generated/ ---
         search_dirs = [output_dir, output_dir / "course_generated"]
         
         for search_dir in search_dirs:
             if not search_dir.exists():
                 continue
             for filename in expected_files:
-                if filename in results:  # Déjà trouvé dans un dossier précédent
+                if filename in results:
                     continue
                 file_path = search_dir / filename
                 if file_path.exists():
@@ -360,7 +283,7 @@ STDERR:
                     keep_workspace: bool = False,
                     session_id: Optional[str] = None) -> dict:
         """
-        Pipeline complet : creation -> copie -> patch -> injection -> execution -> recuperation -> nettoyage.
+        Pipeline complet : creation -> copie -> injection -> execution -> recuperation -> nettoyage.
         """
         workspace = None
         files_data = {}
@@ -375,7 +298,6 @@ STDERR:
             files_data = self.collect_results(workspace)
 
         except Exception as e:
-            # --- CORRECTION : Récupérer les fichiers partiels avant nettoyage ---
             error_msg = str(e)
             print(f"\n[WARN] Pipeline interrompu : {error_msg}")
             if workspace and workspace.exists():
@@ -407,7 +329,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Test du Workspace Manager")
     parser.add_argument("--project", "-p", required=True,
-                        help="Chemin du projet original (ex: C:/Users/.../Projet python - RAG)")
+                        help="Chemin du projet original")
     parser.add_argument("--pdfs", required=True, nargs="+",
                         help="Chemins des PDFs a traiter")
     parser.add_argument("--pages", type=int, default=10,

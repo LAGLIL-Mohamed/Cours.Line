@@ -8,7 +8,7 @@ from pathlib import Path
 class VectorConfig:
     """Parametres de vectorisation et recherche."""
 
-    project_root: Path = Path(r"C:\Users\dell\Desktop\Projet python - RAG\rag")
+    project_root: Path = Path(__file__).resolve().parent.parent
 
     # Mode legacy : un seul fichier chunks.jsonl
     chunks_input: Path = None

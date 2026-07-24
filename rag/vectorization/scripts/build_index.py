@@ -6,7 +6,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
+while PROJECT_ROOT.parent != PROJECT_ROOT and not (PROJECT_ROOT / "vectorization").exists():
+    PROJECT_ROOT = PROJECT_ROOT.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from vectorization import BGEEmbedder, FAISSIndexer, MetadataStore, VectorConfig

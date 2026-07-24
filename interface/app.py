@@ -38,8 +38,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSO
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_manager import WorkspaceManager
-
 # ---------------------------------------------------------------------
 # CHARGEMENT DU .ENV
 # ---------------------------------------------------------------------
@@ -57,16 +57,19 @@ def _load_env_file(env_path: Path):
 
 
 # Charger le .env du projet original si present
-_env_path = Path(r"C:/Users/dell/Desktop/Projet python - RAG") / ".env"
+# Détecter la racine du projet (app.py est dans interface/, donc parent = racine)
+_env_path = Path(__file__).resolve().parent.parent / ".env"
 _load_env_file(_env_path)
 
 
 # ---------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------
+# Détecter automatiquement la racine du projet
+_detected_root = Path(__file__).resolve().parent.parent
 ORIGINAL_PROJECT_ROOT = Path(os.environ.get(
     "RAG_ORIGINAL_PROJECT",
-    r"C:/Users/dell/Desktop/Projet python - RAG"
+    str(_detected_root)
 ))
 
 MAX_FILE_SIZE_MB = 50

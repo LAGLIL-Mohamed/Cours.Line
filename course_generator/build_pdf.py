@@ -942,9 +942,9 @@ def main() -> int:
     # essaie DEFAULT_INPUT_FALLBACK (utile si le pipeline produit tantôt
     # du .md, tantôt du .json).
     # -------------------------------------------------------------------
-    DEFAULT_INPUT = Path(r"rag\data\output\course_generated\course.md")
-    DEFAULT_INPUT_FALLBACK = Path(r"rag\data\output\course_generated\course.json")
-    DEFAULT_OUTPUT = Path(r"rag\data\output\course_generated\course.pdf")
+    DEFAULT_INPUT = Path("rag/data/output/course_generated/course.md")
+    DEFAULT_INPUT_FALLBACK = Path("rag/data/output/course_generated/course.json")
+    DEFAULT_OUTPUT = Path("rag/data/output/course_generated/course.pdf")
     DEFAULT_DEDUP = True
     DEFAULT_TOC_DEPTH = 3
 

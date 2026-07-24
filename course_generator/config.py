@@ -15,7 +15,7 @@ class CourseConfig:
     vector_store_dir: Path = None
     output_dir: Path = None
 
-    mistral_api_key: str = "2hT4yoGGSFRvtwHgtOhE53FKAA0JIp7K"
+    mistral_api_key: str = os.getenv("MISTRAL_API_KEY", "")
     mistral_model: str = "mistral-large-latest"
     min_delay_seconds: float = 1.5
     max_retries: int = 3
@@ -25,10 +25,13 @@ class CourseConfig:
 
     def __post_init__(self) -> None:
         # Détecte si le pipeline est dans un sous-dossier 'rag/'
-        if (self.project_root / "rag").exists():
-            base = self.project_root / "rag"
-        else:
+        base = self.project_root
+        while base.parent != base and not (base / "rag").exists():
+            base = base.parent
+        if not (base / "rag").exists():
             base = self.project_root
+        else:
+            base = base / "rag"
 
         if self.hierarchy_summary_path is None:
             self.hierarchy_summary_path = base / "data" / "output" / "hierarchy_summary.json"

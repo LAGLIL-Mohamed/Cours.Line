@@ -24,7 +24,7 @@ from typing import Any
 # CONFIG
 # =====================================================================
 
-OUTPUT_DIR = Path(r"rag\data\output")
+OUTPUT_DIR = Path("rag/data/output")
 
 # Regex pour extraire la numérotation : "1.2.3 Titre" -> ["1","2","3"]
 RE_NUMBERING = re.compile(r"^(?:(\d+(?:\.\d+)*)[.\)\s]+|([IVX]+)[.\)\s]+|([A-Z])[.\)\s]+)")
