@@ -55,8 +55,7 @@ Que vous soyez enseignant, étudiant ou formateur, Course.Line analyse vos sourc
 ### 1. Cloner le projet
 
 ```bash
-git clone https://github.com/votre-username/course-line.git
-cd course-line
+git clone https://github.com/Mo7hamedd/Cours.Line.git
 ```
 
 ### 2. Créer un environnement virtuel
