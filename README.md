@@ -2,7 +2,7 @@
   <img src="interface/static/logo.png" alt="Course.Line Logo" width="400">
 </p>
 
-<h1 align="center">Course.Line</h1>
+<h1 align="center">Cours.Line</h1>
 
 <p align="center">
   <strong>Générez automatiquement des cours structurés et des travaux dirigés à partir de vos documents PDF.</strong>
