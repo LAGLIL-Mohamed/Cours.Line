@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="interface/static/logo.png" alt="Course.Line Logo" width="400">
+  <img src="interface/static/logo.png" alt="Cours.Line Logo" width="400">
 </p>
 
 <h1 align="center">Cours.Line</h1>
@@ -17,9 +17,9 @@
 
 ---
 
-## ✨ Qu'est-ce que Course.Line ?
+## ✨ Qu'est-ce que Cours.Line ?
 
-**Course.Line** est une application intelligente qui transforme vos documents numériques (articles scientifiques, supports de cours, polycopiés PDF) en **cours pédagogiques complets** et **travaux dirigés (TD)** prêts à l'emploi.
+**Cours.Line** est une application intelligente qui transforme vos documents numériques (articles scientifiques, supports de cours, polycopiés PDF) en **cours pédagogiques complets** et **travaux dirigés (TD)** prêts à l'emploi.
 
 Que vous soyez enseignant, étudiant ou formateur, Course.Line analyse vos sources, en extrait l'essentiel et génère pour vous :
 - 📘 Un **cours structuré** en chapitres et sections
